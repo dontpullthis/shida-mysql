@@ -1,2 +1,5 @@
 # shida-mysql
-A mysql driver for Shida
+
+__Work in progress__
+
+A mysql driver for Shida.
