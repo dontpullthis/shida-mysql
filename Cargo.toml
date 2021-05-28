@@ -1,0 +1,11 @@
+[package]
+name = "shida-mysql"
+version = "0.1.0"
+authors = ["Sergei Beljakov <1899416+tasmanianfox@users.noreply.github.com>"]
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+shida-core = { git = "https://github.com/tasmanianfox/shida-core", branch = "shared_lib" }
