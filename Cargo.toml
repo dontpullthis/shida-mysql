@@ -8,4 +8,6 @@ edition = "2018"
 crate-type = ["cdylib"]
 
 [dependencies]
-shida-core = { git = "https://github.com/tasmanianfox/shida-core", branch = "shared_lib" }
+shida-core = { path ="../shida-core" }
+
+mysql = "20.1.0"

@@ -1,0 +1,12 @@
+version: '3'
+services:
+    mysql_src:
+        image: mysql:8
+        environment:
+            MYSQL_ROOT_PASSWORD: hello
+            MYSQL_DATABASE: sample_db
+            MYSQL_USER: myuser
+            MYSQL_PASSWORD: "1234"
+        ports:
+            - 3306:3306
+        network_mode: bridge
