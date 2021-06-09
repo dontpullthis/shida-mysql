@@ -15,7 +15,7 @@ pub fn read(conn_ptr: *const u8) -> (ffi::ConstCCharPtr, ffi::ConstCCharPtr) {
         },
     ) {
         Ok(s) => s,
-        Err(_) => return (std::ptr::null(), unsafe { ffi::string_to_ccharptr(String::from("Failed to get mysql connection")) } ),
+        Err(_) => return (std::ptr::null(), ffi::string_to_ccharptr(String::from("Failed to get mysql connection"))),
     };
     
     let item = match selected_payments.get(0) {
@@ -24,5 +24,5 @@ pub fn read(conn_ptr: *const u8) -> (ffi::ConstCCharPtr, ffi::ConstCCharPtr) {
     };
 
 
-    (unsafe { ffi::string_to_ccharptr(item) }, std::ptr::null())
+    (ffi::string_to_ccharptr(item), std::ptr::null())
 }
