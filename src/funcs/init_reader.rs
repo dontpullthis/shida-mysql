@@ -47,29 +47,28 @@ fn format_url(params: &MysqlConnectParams) -> String {
 }
 
 pub fn init_reader(paramsc: ffi::Size, paramsv: *const ffi::ConstCCharPtr) -> (*const u8, ffi::ConstCCharPtr) {
-    let mut params = MysqlConnectParams::new();
-    for i in 0..paramsc {
-        let ch: ffi::ConstCCharPtr = unsafe { *paramsv.offset(i as isize) };
-        let param = match ffi::ccharptr_to_string(ch) {
-            Ok(string) => string,
-            Err(_) => return (std::ptr::null(), ffi::str_to_ccharptr("Failed to convert param")),
-        };
+    let mut mysql_params = MysqlConnectParams::new();
+    let reader_params = match ffi::cchar_ptr_to_vec_string(paramsc, paramsv) {
+        Ok(p) => p,
+        Err(_) => return (std::ptr::null(), ffi::str_to_ccharptr("Failed to convert param")),
+    };
+    for param in reader_params.iter() {
         let (key, value) = match string_to_keyvalue(&param) {
             Some(r) => r,
             None => continue,
         };
 
         match key.as_str() {
-            "database" => { params.dbname = Some(value); },
-            "host" => { params.host = Some(value); },
-            "password" => { params.password = Some(value); },
-            "port" => { params.port = Some(value); },
-            "user" => { params.user = Some(value); },
+            "database" => { mysql_params.dbname = Some(value); },
+            "host" => { mysql_params.host = Some(value); },
+            "password" => { mysql_params.password = Some(value); },
+            "port" => { mysql_params.port = Some(value); },
+            "user" => { mysql_params.user = Some(value); },
             _ => {},
         };
     }
 
-    let url = format_url(&params);
+    let url = format_url(&mysql_params);
     let pool = match Pool::new(url) {
         Ok(p) => p,
         Err(_) => return (std::ptr::null(), ffi::str_to_ccharptr("Failed to create a mysql pool")),
