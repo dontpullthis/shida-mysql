@@ -3,6 +3,7 @@ use std::mem;
 use mysql::Pool;
 
 use shida_core::ffi;
+use shida_core::sys::args::string_to_keyvalue;
 
 use crate::context::reader::ReaderContext;
 
@@ -51,17 +52,14 @@ pub fn init_reader(paramsc: ffi::Size, paramsv: *const ffi::ConstCCharPtr) -> (*
         let ch: ffi::ConstCCharPtr = unsafe { *paramsv.offset(i as isize) };
         let param = match ffi::ccharptr_to_string(ch) {
             Ok(string) => string,
-            Err(_) => return (std::ptr::null(), ffi::string_to_ccharptr(String::from("Failed to convert param"))),
+            Err(_) => return (std::ptr::null(), ffi::str_to_ccharptr("Failed to convert param")),
         };
-
-        let pos = match param.find("=") {
-            Some(position) => position,
+        let (key, value) = match string_to_keyvalue(&param) {
+            Some(r) => r,
             None => continue,
         };
-        let key = &param[..pos];
-        let value = String::from(&param[pos+1..]);
 
-        match key {
+        match key.as_str() {
             "database" => { params.dbname = Some(value); },
             "host" => { params.host = Some(value); },
             "password" => { params.password = Some(value); },
@@ -74,7 +72,7 @@ pub fn init_reader(paramsc: ffi::Size, paramsv: *const ffi::ConstCCharPtr) -> (*
     let url = format_url(&params);
     let pool = match Pool::new(url) {
         Ok(p) => p,
-        Err(_) => return (std::ptr::null(), ffi::string_to_ccharptr(String::from("Failed to create a mysql pool"))),
+        Err(_) => return (std::ptr::null(), ffi::str_to_ccharptr("Failed to create a mysql pool")),
     };
     
     match pool.get_conn() {
@@ -82,6 +80,6 @@ pub fn init_reader(paramsc: ffi::Size, paramsv: *const ffi::ConstCCharPtr) -> (*
             let context = Box::from(ReaderContext::new(conn));
             (unsafe { mem::transmute(context) }, std::ptr::null())
         },
-        Err(_) => ( std::ptr::null(), ffi::string_to_ccharptr(String::from("Failed to get mysql connection")) ),
+        Err(_) => ( std::ptr::null(), ffi::str_to_ccharptr("Failed to get mysql connection") ),
     }
 }
