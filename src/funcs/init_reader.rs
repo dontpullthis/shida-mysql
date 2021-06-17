@@ -50,7 +50,7 @@ pub fn init_reader(paramsc: ffi::Size, paramsv: *const ffi::ConstCCharPtr) -> (*
     let mut mysql_params = MysqlConnectParams::new();
     let reader_params = match ffi::cchar_ptr_to_vec_string(paramsc, paramsv) {
         Ok(p) => p,
-        Err(_) => return (std::ptr::null(), ffi::str_to_ccharptr("Failed to convert param")),
+        Err(e) => return (std::ptr::null(), ffi::string_to_ccharptr(format!("Failed to convert param: {}", e))),
     };
     for param in reader_params.iter() {
         let (key, value) = match string_to_keyvalue(&param) {
@@ -71,7 +71,7 @@ pub fn init_reader(paramsc: ffi::Size, paramsv: *const ffi::ConstCCharPtr) -> (*
     let url = format_url(&mysql_params);
     let pool = match Pool::new(url) {
         Ok(p) => p,
-        Err(_) => return (std::ptr::null(), ffi::str_to_ccharptr("Failed to create a mysql pool")),
+        Err(e) => return (std::ptr::null(), ffi::string_to_ccharptr(format!("Failed to create a mysql pool: {}", e))),
     };
     
     match pool.get_conn() {
@@ -79,6 +79,6 @@ pub fn init_reader(paramsc: ffi::Size, paramsv: *const ffi::ConstCCharPtr) -> (*
             let context = Box::from(ReaderContext::new(conn));
             (unsafe { mem::transmute(context) }, std::ptr::null())
         },
-        Err(_) => ( std::ptr::null(), ffi::str_to_ccharptr("Failed to get mysql connection") ),
+        Err(e) => ( std::ptr::null(), ffi::string_to_ccharptr(format!("Failed to get mysql connection: {}", e)) ),
     }
 }

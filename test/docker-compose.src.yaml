@@ -10,3 +10,6 @@ services:
         ports:
             - 3306:3306
         network_mode: bridge
+        volumes:
+            - "./.volumes/src/datadir:/var/lib/mysql"
+            - "./.volumes/src/sample_data:/sample_data"
