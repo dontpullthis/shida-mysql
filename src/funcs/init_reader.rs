@@ -1,8 +1,10 @@
 use std::mem;
 
 use mysql::Pool;
+use mysql::prelude::*;
 
 use shida_core::ffi;
+use shida_core::ffi::typedefs;
 use shida_core::sys::args::string_to_keyvalue;
 
 use crate::context::reader::ReaderContext;
@@ -46,7 +48,7 @@ fn format_url(params: &MysqlConnectParams) -> String {
     format!("mysql://{}@{}/{}", userpass, hostport, dbname)
 }
 
-pub fn init_reader(paramsc: ffi::Size, paramsv: *const ffi::ConstCCharPtr) -> (*const u8, ffi::ConstCCharPtr) {
+pub fn init_reader(paramsc: typedefs::Size, paramsv: *const typedefs::ConstCCharPtr) -> (*const u8, typedefs::ConstCCharPtr) {
     let mut mysql_params = MysqlConnectParams::new();
     let reader_params = match ffi::cchar_ptr_to_vec_string(paramsc, paramsv) {
         Ok(p) => p,
@@ -74,11 +76,33 @@ pub fn init_reader(paramsc: ffi::Size, paramsv: *const ffi::ConstCCharPtr) -> (*
         Err(e) => return (std::ptr::null(), ffi::string_to_ccharptr(format!("Failed to create a mysql pool: {}", e))),
     };
     
-    match pool.get_conn() {
-        Ok(conn) => {
-            let context = Box::from(ReaderContext::new(conn));
-            (unsafe { mem::transmute(context) }, std::ptr::null())
-        },
-        Err(e) => ( std::ptr::null(), ffi::string_to_ccharptr(format!("Failed to get mysql connection: {}", e)) ),
+    let mut context = match pool.get_conn() {
+        Ok(conn) => Box::from(ReaderContext::new(conn)),
+        Err(e) => return (std::ptr::null(), ffi::string_to_ccharptr(format!("Failed to get mysql connection: {}", e))),
+    };
+
+    match inspect_db(&mut context) {
+        Ok(_) => (unsafe { mem::transmute(context) }, std::ptr::null()),
+        Err(e) => (std::ptr::null(), ffi::string_to_ccharptr(e)),
+
     }
+}
+
+fn inspect_db(context: &mut ReaderContext) -> Result<(), String> {
+    let query: Vec<String> = match context.common_context.mysql_connection.query_map(
+        "SHOW TABLES",
+        |test| {
+            test
+        },
+    ) {
+        Ok(s) => s,
+        Err(e) => return Err(format!("Failed to execute a SQL query: {}", e)),
+    };
+
+    for item in query {
+        println!("Discovered a table: {}", &item);
+        context.cursors.insert(item, (0, 0));
+    }
+
+    Ok(())
 }
