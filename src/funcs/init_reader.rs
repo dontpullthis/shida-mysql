@@ -3,7 +3,8 @@ use std::mem;
 use mysql::Pool;
 use mysql::prelude::*;
 
-use shida_core::ffi;
+use shida_core::ffi::app_config::AppConfig;
+use shida_core::ffi::casting;
 use shida_core::ffi::typedefs;
 use shida_core::sys::args::string_to_keyvalue;
 
@@ -48,11 +49,11 @@ fn format_url(params: &MysqlConnectParams) -> String {
     format!("mysql://{}@{}/{}", userpass, hostport, dbname)
 }
 
-pub fn init_reader(paramsc: typedefs::Size, paramsv: *const typedefs::ConstCCharPtr) -> (*const u8, typedefs::ConstCCharPtr) {
+pub fn init_reader(app_config: *const AppConfig, paramsc: typedefs::Size, paramsv: *const typedefs::ConstCCharPtr) -> (*const u8, typedefs::ConstCCharPtr) {
     let mut mysql_params = MysqlConnectParams::new();
-    let reader_params = match ffi::cchar_ptr_to_vec_string(paramsc, paramsv) {
+    let reader_params = match casting::cchar_ptr_to_vec_string(paramsc, paramsv) {
         Ok(p) => p,
-        Err(e) => return (std::ptr::null(), ffi::string_to_ccharptr(format!("Failed to convert param: {}", e))),
+        Err(e) => return (std::ptr::null(), casting::string_to_ccharptr(format!("Failed to convert param: {}", e))),
     };
     for param in reader_params.iter() {
         let (key, value) = match string_to_keyvalue(&param) {
@@ -73,18 +74,17 @@ pub fn init_reader(paramsc: typedefs::Size, paramsv: *const typedefs::ConstCChar
     let url = format_url(&mysql_params);
     let pool = match Pool::new(url) {
         Ok(p) => p,
-        Err(e) => return (std::ptr::null(), ffi::string_to_ccharptr(format!("Failed to create a mysql pool: {}", e))),
+        Err(e) => return (std::ptr::null(), casting::string_to_ccharptr(format!("Failed to create a mysql pool: {}", e))),
     };
     
     let mut context = match pool.get_conn() {
-        Ok(conn) => Box::from(ReaderContext::new(conn)),
-        Err(e) => return (std::ptr::null(), ffi::string_to_ccharptr(format!("Failed to get mysql connection: {}", e))),
+        Ok(conn) => Box::from(ReaderContext::new(app_config, conn)),
+        Err(e) => return (std::ptr::null(), casting::string_to_ccharptr(format!("Failed to get mysql connection: {}", e))),
     };
 
     match inspect_db(&mut context) {
         Ok(_) => (unsafe { mem::transmute(context) }, std::ptr::null()),
-        Err(e) => (std::ptr::null(), ffi::string_to_ccharptr(e)),
-
+        Err(e) => (std::ptr::null(), casting::string_to_ccharptr(e)),
     }
 }
 
@@ -100,7 +100,9 @@ fn inspect_db(context: &mut ReaderContext) -> Result<(), String> {
     };
 
     for item in query {
-        println!("Discovered a table: {}", &item);
+        unsafe {
+            ((*context.app_config).functions.log.debug)(casting::string_to_ccharptr(format!("Discovered a table: {}", &item)));
+        }
         context.cursors.insert(item, (0, 0));
     }
 
