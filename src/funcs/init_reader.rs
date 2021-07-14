@@ -1,6 +1,6 @@
 use std::mem;
 
-use mysql::Pool;
+use mysql::{OptsBuilder, Pool};
 use mysql::prelude::*;
 
 use shida_core::ffi::app_config::AppConfig;
@@ -10,77 +10,35 @@ use shida_core::sys::args::string_to_keyvalue;
 
 use crate::context::reader::ReaderContext;
 
-struct MysqlConnectParams {
-    dbname: Option<String>,
-    host: Option<String>,
-    password: Option<String>,
-    port: Option<String>,
-    user: Option<String>,
-}
-
-impl MysqlConnectParams {
-    fn new() -> MysqlConnectParams {
-        MysqlConnectParams {
-            dbname: None,
-            host: None,
-            password: None,
-            port: None,
-            user: None,
-        }
-    }
-}
-
-fn format_separated_string(args: [&Option<String>; 2]) -> String {
-    Vec::from(args).iter()
-        .filter(|i| i.is_some())
-        .map(|i| i.as_ref().unwrap().clone())
-        .collect::<Vec<String>>()
-        .join(":")
-}
-
-fn format_url(params: &MysqlConnectParams) -> String {
-    let userpass = format_separated_string([&params.user, &params.password]);
-    let hostport = format_separated_string([&params.host, &params.port]);
-    let dbname = match &params.dbname {
-        Some(d) => d.clone(),
-        None => String::new(),
-    };
-
-    format!("mysql://{}@{}/{}", userpass, hostport, dbname)
-}
-
 pub fn init_reader(app_config: *const AppConfig, paramsc: typedefs::Size, paramsv: *const typedefs::ConstCCharPtr) -> (*const u8, typedefs::ConstCCharPtr) {
-    let mut mysql_params = MysqlConnectParams::new();
     let reader_params = match casting::cchar_ptr_to_vec_string(paramsc, paramsv) {
         Ok(p) => p,
         Err(e) => return (std::ptr::null(), casting::string_to_ccharptr(format!("Failed to convert param: {}", e))),
     };
+    let mut opts_builder = OptsBuilder::new();
+    let mut db_name: Option<String> = None;
     for param in reader_params.iter() {
         let (key, value) = match string_to_keyvalue(&param) {
             Some(r) => r,
             None => continue,
         };
 
-        match key.as_str() {
-            "database" => { mysql_params.dbname = Some(value); },
-            "host" => { mysql_params.host = Some(value); },
-            "password" => { mysql_params.password = Some(value); },
-            "port" => { mysql_params.port = Some(value); },
-            "user" => { mysql_params.user = Some(value); },
-            _ => {},
+        opts_builder = match key.as_str() {
+            "database" => { db_name = Some(value.clone()); opts_builder.db_name(Some(value)) },
+            "host" => { opts_builder.ip_or_hostname(Some(value)) },
+            "password" => { opts_builder.pass(Some(value)) },
+            "port" => { opts_builder.tcp_port(value.parse::<u16>().unwrap()) },
+            "user" => { opts_builder.user(Some(value)) },
+            _ => { opts_builder },
         };
     }
 
-    let url = format_url(&mysql_params);
-    let pool = match Pool::new(url) {
+    let pool = match Pool::new(opts_builder) {
         Ok(p) => p,
         Err(e) => return (std::ptr::null(), casting::string_to_ccharptr(format!("Failed to create a mysql pool: {}", e))),
     };
     
-    let mut context = match pool.get_conn() {
-        Ok(conn) => Box::from(ReaderContext::new(app_config, conn)),
-        Err(e) => return (std::ptr::null(), casting::string_to_ccharptr(format!("Failed to get mysql connection: {}", e))),
-    };
+    let mut context = Box::from(ReaderContext::new(app_config, db_name, pool));
 
     match inspect_db(&mut context) {
         Ok(_) => (unsafe { mem::transmute(context) }, std::ptr::null()),
@@ -89,21 +47,37 @@ pub fn init_reader(app_config: *const AppConfig, paramsc: typedefs::Size, params
 }
 
 fn inspect_db(context: &mut ReaderContext) -> Result<(), String> {
-    let query: Vec<String> = match context.common_context.mysql_connection.query_map(
-        "SHOW TABLES",
-        |test| {
-            test
-        },
-    ) {
-        Ok(s) => s,
-        Err(e) => return Err(format!("Failed to execute a SQL query: {}", e)),
-    };
+    let functions = unsafe { &(*context.app_config).functions };
+    let mut conn = context.common_context.get_mysql_connection()?;
+    let query_all_tables: Vec<String> = match conn.query_map("SHOW TABLES", |table_name| { table_name }) {
+        Ok(s) => Ok(s),
+        Err(e) => Err(format!("Failed to execute a SQL query: {}", e)),
+    }?;
+    let db_name = match &context.common_context.db_name {
+        Some(d) => Ok(d),
+        None => Err(format!("The database name is not provided.")),
+    }?;
 
-    for item in query {
-        unsafe {
-            ((*context.app_config).functions.log.debug)(casting::string_to_ccharptr(format!("Discovered a table: {}", &item)));
+    for table_name in query_all_tables {
+        (functions.log.debug)(casting::string_to_ccharptr(format!("-Discovered a table: {}", &table_name)));
+        context.cursors.insert(table_name.clone(), (0, 0));
+
+        let stmt = match conn.prep("SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_NAME = ?
+                    AND TABLE_SCHEMA = ?") {
+            Ok(s) => Ok(s),
+            Err(e) => Err(format!("Failed to prepare a statement: {}", e)),
+        }?;
+        let result = match conn.exec_opt::<(String, String, Option<u32>), _, _>(&stmt, (&table_name, &db_name,)) {
+            Ok(t) => Ok(t),
+            Err(e) => Err(format!("Failed to execute a SQL query: {}", e)),
+        }?;
+
+        for r in result {
+            let a = r.unwrap();
+            (functions.log.debug)(casting::string_to_ccharptr(format!("--Discovered a column: {}: {}{}", a.0, a.1, match a.2 { Some(n) => format!("({})", n), None => String::new(), })));
         }
-        context.cursors.insert(item, (0, 0));
     }
 
     Ok(())

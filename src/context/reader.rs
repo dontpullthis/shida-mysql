@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use mysql::PooledConn;
+use mysql::Pool;
 
 use shida_core::ffi::app_config::AppConfig;
 
@@ -14,10 +14,10 @@ pub struct ReaderContext {
 }
 
 impl ReaderContext {
-    pub fn new(app_config: *const AppConfig, mysql_connection: PooledConn) -> ReaderContext {
+    pub fn new(app_config: *const AppConfig, db_name: Option<String>, mysql_pool: Pool) -> ReaderContext {
         ReaderContext {
             app_config,
-            common_context: Context::new(mysql_connection),
+            common_context: Context::new(db_name, mysql_pool),
             cursors: HashMap::new(),
         }
     }

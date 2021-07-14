@@ -10,4 +10,4 @@ crate-type = ["cdylib"]
 [dependencies]
 shida-core = { path ="../shida-core" }
 
-mysql = "20.1.0"
+mysql = "21.0.0"

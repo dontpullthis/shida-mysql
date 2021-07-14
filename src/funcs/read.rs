@@ -8,8 +8,13 @@ use shida_core::ffi::typedefs;
 use crate::context::reader::ReaderContext;
 
 pub fn read(conn_ptr: *const u8) -> (typedefs::ConstCCharPtr,typedefs::ConstCCharPtr) {
-    let mut reader_context: Box<ReaderContext> = unsafe { mem::transmute(conn_ptr) };
-    let test_query: Vec<String> = match reader_context.common_context.mysql_connection.query_map(
+    let reader_context: Box<ReaderContext> = unsafe { mem::transmute(conn_ptr) };
+    let mut conn = match reader_context.common_context.get_mysql_connection() {
+        Ok(c) => c,
+        Err(e) => return (std::ptr::null(), casting::string_to_ccharptr(e)),
+    };
+
+    let test_query: Vec<String> = match conn.query_map(
         "SHOW TABLES",
         |test| {
             test
